@@ -1,6 +1,6 @@
 // Variables used by Scriptable.
 // These must be at the very top of the file. Do not edit.
-// icon-color: red; icon-glyph: bullhorn;
+// icon-color: red; icon-glyph: paper-plane;
 
 // Zeal Général · Zeal Motor
 // Widget 1 — Informations générales destinées à tous les employés.
@@ -8,6 +8,7 @@
 // Fichier généré par scripts/build-scriptable.mjs — modifiez scriptable/src/.
 
 const SCOPE = 'general';
+const SCRIPT_ICON = 'icon-color: red; icon-glyph: paper-plane;';
 
 // TweetNaCl.js 1.0.3 — domaine public (Unlicense), https://tweetnacl.js.org
 const NACL = (function () { var module = { exports: {} }; var self; var require;
@@ -20,7 +21,7 @@ return module.exports; })();
 // La clé de l'appareil est reçue par QR code et gardée dans le Trousseau iOS.
 // ---------------------------------------------------------------------------
 const FEED_URL = 'https://zeal-motor.github.io/zeal-diffusion';
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
 const KEY_ID = 'zeal.device.id';
 const KEY_SECRET = 'zeal.device.key';
@@ -203,7 +204,9 @@ function parseActivation(params) {
 
 function parseActivationLink(link) {
   const text = String(link || '').trim();
-  const query = text.indexOf('?') >= 0 ? text.slice(text.indexOf('?') + 1) : text;
+  // Lien Scriptable (« …?d=…&k=… ») ou page d'activation (« …#d=…&k=… »).
+  const cut = text.search(/[?#]/);
+  const query = cut >= 0 ? text.slice(cut + 1) : text;
   const params = {};
   try {
     query.split('&').forEach(function (pair) {
@@ -722,6 +725,125 @@ async function showAlert(title, message, actions, cancel) {
   return alert.presentAlert();
 }
 
+// ---------------------------------------------------------------------------
+// Nom du script. Le QR code d'activation ouvre « scriptable:///run/Zeal%20Personnel » :
+// Scriptable ne le trouve que si le script porte exactement ce nom. Un script
+// collé dans un nouveau script s'appelle d'abord « Untitled Script ».
+// ---------------------------------------------------------------------------
+function sameName(a, b) {
+  return String(a || '').normalize('NFC') === String(b || '').normalize('NFC');
+}
+
+// Les scripts sont dans iCloud Drive si iCloud est activé pour Scriptable,
+// sinon sur l'appareil. Le gestionnaire iCloud n'est utilisé que si le script
+// y est déjà : sur un iPhone sans iCloud, il provoque une erreur. (Le cache,
+// lui, reste toujours sur l'appareil.)
+function scriptsFileManager() {
+  const local = FileManager.local();
+  return local.isFileStoredIniCloud(module.filename) ? FileManager.iCloud() : local;
+}
+
+// En-tête lu par Scriptable (icône et couleur du script). Scriptable ignore
+// celui d'un code collé : on remplace les en-têtes du début par le nôtre.
+const HEADER_LINE = /^\/\/ (Variables used by Scriptable\.|These must be at the very top of the file\. Do not edit\.|icon-color: [^\n]*)$/;
+
+function withScriptHeader(source) {
+  const lines = String(source).split('\n');
+  let i = 0;
+  while (i < lines.length && (lines[i].trim() === '' || HEADER_LINE.test(lines[i].trim()))) i += 1;
+  return ['// Variables used by Scriptable.', '// These must be at the very top of the file. Do not edit.',
+    '// ' + SCRIPT_ICON, ''].concat(lines.slice(i)).join('\n');
+}
+
+// Le fichier lu doit être ce script, complet et de la même version : sinon
+// on ne touche à rien.
+function looksLikeThisScript(source) {
+  return typeof source === 'string' && source.length > 20000
+    && source.indexOf("const SCOPE = '" + SCOPE + "';") >= 0
+    && source.indexOf("const VERSION = '" + VERSION + "';") >= 0
+    && source.indexOf('async function main()') >= 0;
+}
+
+function versionOf(source) {
+  const match = /const VERSION = '([^']+)';/.exec(String(source || ''));
+  return match ? match[1] : null;
+}
+
+// (Fonction : SCRIPT_TITLE est défini plus bas, dans general.js ou personal.js.)
+function renameHelp() {
+  return 'Renommez-le vous-même : ouvrez le script, touchez son nom en haut de l\'écran et tapez exactement « '
+    + SCRIPT_TITLE + ' ». Ou, dans la liste des scripts, appuyez longuement dessus › Rename.';
+}
+
+// Propose de donner au script son nom exact. Copie le script sous le bon nom,
+// vérifie la copie, puis supprime l'ancien fichier. Renvoie true si c'est fait.
+async function offerRename() {
+  const current = Script.name();
+  if (sameName(current, SCRIPT_TITLE)) return false;
+  // Seul « Zeal Personnel » est ouvert par le QR code d'activation.
+  const reason = SCOPE === 'personal'
+    ? 'pour que le QR code d\'activation fonctionne et pour le retrouver dans les réglages du widget.'
+    : 'pour le retrouver facilement dans les réglages du widget.';
+  const choice = await showAlert('Nommer ce script',
+    'Ce script s\'appelle « ' + current + ' ». Il doit s\'appeler exactement « ' + SCRIPT_TITLE + ' » ' + reason,
+    ['Renommer en « ' + SCRIPT_TITLE + ' »'], 'Plus tard');
+  if (choice === -1) return false;
+  const source = module.filename;
+  const folder = source.slice(0, source.lastIndexOf('/'));
+  let fm;
+  let target;
+  let content;
+  try {
+    fm = scriptsFileManager();
+    target = fm.joinPath(folder, SCRIPT_TITLE + '.js');
+    content = fm.readString(source);
+  } catch (e) {
+    content = null;
+  }
+  // Même fichier à la casse près (copier puis supprimer effacerait tout), ou
+  // contenu illisible : on explique plutôt que de risquer de perdre le script.
+  if (!fm || !looksLikeThisScript(content)
+      || target.normalize('NFC').toLowerCase() === source.normalize('NFC').toLowerCase()) {
+    await showAlert('Renommage impossible', renameHelp(), [], 'OK');
+    return false;
+  }
+  if (fm.fileExists(target)) {
+    let installed = null;
+    try {
+      installed = versionOf(fm.readString(target));
+    } catch (e) {
+      installed = null;
+    }
+    const replace = await showAlert('« ' + SCRIPT_TITLE + ' » existe déjà',
+      'Version installée : ' + (installed || 'inconnue') + '. Cette copie : ' + VERSION + '. '
+        + 'Remplacer le script « ' + SCRIPT_TITLE + ' » par cette copie ? L\'activation de l\'appareil est conservée.',
+      ['Remplacer'], 'Annuler');
+    if (replace === -1) return false;
+  }
+  const renamed = withScriptHeader(content);
+  try {
+    fm.writeString(target, renamed);
+    if (fm.readString(target) !== renamed) throw new Error('copie incomplète');
+  } catch (e) {
+    await showAlert('Renommage impossible', renameHelp(), [], 'OK');
+    return false;
+  }
+  let removed = true;
+  try {
+    fm.remove(source);
+  } catch (e) {
+    removed = false;
+  }
+  await showAlert('Script renommé',
+    'Il s\'appelle maintenant « ' + SCRIPT_TITLE + ' ». Touchez Done sans modifier ce script. '
+      + (removed ? 'Si « ' + current + ' » apparaît encore dans la liste des scripts, supprimez-le. '
+        : 'Supprimez ensuite « ' + current + ' » de la liste des scripts. ')
+      + 'Si un widget utilisait l\'ancien nom, appuyez longuement dessus › Modifier le widget, puis choisissez « '
+      + SCRIPT_TITLE + ' ».',
+    [], 'OK');
+  return true;
+}
+
 // Enregistre la clé puis vérifie qu'elle ouvre bien le fichier publié.
 async function activate(creds, now) {
   const existing = getCredentials();
@@ -810,6 +932,9 @@ async function runInApp(params) {
     await showAlert('Script non configuré', 'Copiez ce script depuis la page d\'installation Zeal Motor : l\'adresse de diffusion y est déjà renseignée.', [], 'OK');
     return;
   }
+
+  // Lancé par le QR code, le script porte forcément le bon nom.
+  if (!params.d && !params.k && params.from !== 'widget') await offerRename();
 
   if (params.d || params.k) {
     const creds = parseActivation(params);
