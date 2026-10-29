@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Installer les widgets Zeal Motor</title>
+<style>
+:root{--ink:#17191D;--muted:#4F545B;--line:#E3E0D9;--bg:#F4F3EF;--red:#ED1C24;--dark:#1F2023}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+main{max-width:720px;margin:0 auto;padding:28px 18px 56px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+header img{height:40px}
+h1{font-size:28px;line-height:1.2;margin:18px 0 6px}
+h2{font-size:19px;margin:0 0 8px;display:flex;gap:10px;align-items:center}
+.lead{color:var(--muted);margin:0 0 22px}
+.step{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;margin-bottom:14px}
+.num{flex:none;width:28px;height:28px;border-radius:14px;background:var(--dark);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center}
+.step p,.step li{color:var(--muted)}
+.step ol{padding-left:20px;margin:6px 0}
+.scripts{display:grid;gap:12px;margin-top:10px}
+.script{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.script b{display:block;margin-bottom:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+button,a.btn{display:inline-block;min-height:44px;padding:0 16px;border-radius:10px;font-family:inherit;font-size:15px;font-weight:600;line-height:44px;border:1px solid #C9C6BE;background:#fff;color:var(--ink);text-decoration:none;cursor:pointer}
+button.primary{background:var(--dark);border-color:var(--dark);color:#fff}
+.ok{color:#17663F;font-weight:600;min-height:22px;margin-top:6px}
+.warn{background:#FCEFD6;color:#5C3600;border-radius:12px;padding:12px 14px;margin-top:10px}
+code{background:#ECEAE4;border-radius:6px;padding:1px 6px}
+footer{color:var(--muted);font-size:13px;margin-top:28px}
+</style>
+</head>
+<body>
+<main>
+  <header><img src="../brand/zeal-logo.png" alt="Zeal Motor"></header>
+  <h1>Installer les widgets Zeal Motor</h1>
+  <p class="lead">Environ 5 minutes sur votre iPhone ou iPad. Aucun compte ni mot de passe à créer.</p>
+
+  <section class="step">
+    <h2><span class="num">1</span>Installer Scriptable</h2>
+    <p>Dans l'App Store, installez l'application gratuite <b>Scriptable</b> (Simon B. Støvring), puis ouvrez-la une fois.</p>
+    <a class="btn" href="https://apps.apple.com/app/scriptable/id1405459188">Ouvrir l'App Store</a>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">2</span>Ajouter les deux scripts</h2>
+    <ol>
+      <li>Touchez <b>Copier le script</b> ci-dessous.</li>
+      <li>Dans Scriptable, touchez <b>+</b>, touchez la zone de texte puis <b>Coller</b>.</li>
+      <li>Touchez le titre en haut et renommez le script <b>exactement</b> comme indiqué, puis <b>Done</b>.</li>
+    </ol>
+    <div class="scripts">
+      <div class="script">
+        <b>Zeal Général</b>
+        <div class="row">
+          <button class="primary" type="button" data-copy="zeal-general.js">Copier le script</button>
+          <a class="btn" href="zeal-general.js" download="Zeal Général.js">Télécharger</a>
+        </div>
+        <div class="ok" role="status" data-status="zeal-general.js"></div>
+      </div>
+      <div class="script">
+        <b>Zeal Personnel</b>
+        <div class="row">
+          <button class="primary" type="button" data-copy="zeal-personnel.js">Copier le script</button>
+          <a class="btn" href="zeal-personnel.js" download="Zeal Personnel.js">Télécharger</a>
+        </div>
+        <div class="ok" role="status" data-status="zeal-personnel.js"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">3</span>Activer votre appareil</h2>
+    <p>Votre gestionnaire vous montre un <b>QR code</b> sur son écran. Visez-le avec l'appareil photo de votre iPhone, touchez <b>Ouvrir dans Scriptable</b>, puis <b>Activer</b>.</p>
+    <p class="warn">Ce QR code est personnel : il donne accès à vos messages. Ne le photographiez pas et ne le partagez pas.</p>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">4</span>Ajouter les widgets</h2>
+    <ol>
+      <li>Appuyez longuement sur l'écran d'accueil, puis <b>Modifier › Ajouter un widget</b>.</li>
+      <li>Choisissez <b>Scriptable</b>, une taille, puis <b>Ajouter le widget</b>.</li>
+      <li>Appuyez longuement sur le widget › <b>Modifier le widget</b> : <b>Script</b> = <i>Zeal Personnel</i>, <b>When Interacting</b> = <i>Run Script</i>.</li>
+      <li>Recommencez avec <i>Zeal Général</i>.</li>
+    </ol>
+  </section>
+
+  <footer>Les widgets se mettent à jour quand iOS le décide (en général toutes les 15 à 60 minutes). Touchez un widget pour voir tous vos messages à jour.</footer>
+</main>
+<script>
+(function () {
+  var cache = {};
+  function load(file) {
+    if (!cache[file]) cache[file] = fetch(file, { cache: 'no-store' }).then(function (r) { return r.text(); });
+    return cache[file];
+  }
+  var texts = {};
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    var file = btn.getAttribute('data-copy');
+    load(file).then(function (t) { texts[file] = t; });
+    btn.addEventListener('click', function () {
+      var status = document.querySelector('[data-status="' + file + '"]');
+      var t = texts[file];
+      if (!t) { status.textContent = 'Chargement… réessayez dans un instant.'; return; }
+      function done() { status.textContent = 'Copié. Collez-le maintenant dans Scriptable.'; }
+      function fallback() {
+        var area = document.createElement('textarea');
+        area.value = t;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        area.setSelectionRange(0, t.length);
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(area);
+        status.textContent = ok ? 'Copié. Collez-le maintenant dans Scriptable.' : 'Copie impossible : utilisez « Télécharger ».';
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(done, fallback);
+      } else {
+        fallback();
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
