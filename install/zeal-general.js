@@ -21,7 +21,7 @@ return module.exports; })();
 // La clé de l'appareil est reçue par QR code et gardée dans le Trousseau iOS.
 // ---------------------------------------------------------------------------
 const FEED_URL = 'https://zeal-motor.github.io/zeal-diffusion';
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 
 const KEY_ID = 'zeal.device.id';
 const KEY_SECRET = 'zeal.device.key';
@@ -394,7 +394,23 @@ function viewFor(data, now, until) {
     total: active.length,
     nextChange: nextChange === null ? null : new Date(nextChange),
     employee: SCOPE === 'personal' ? data.employee || getEmployee() : null,
+    // Lien « Avancement des projets » (avec la clé), ou null.
+    projectsUrl: typeof data.projects_url === 'string' ? data.projects_url : null,
   };
+}
+
+// Le lien des projets n'est ouvert que s'il mène à la visionneuse de cette
+// adresse de diffusion (défense contre un contenu altéré).
+function safeProjectsUrl(url) {
+  if (typeof url !== 'string' || !isConfigured() || url.length > 2000) return null;
+  const prefix = FEED_URL + '/projets/';
+  if (url.indexOf(prefix) !== 0) return null;
+  const rest = url.slice(prefix.length);
+  const cut = rest.search(/[?#]/);
+  const pathPart = cut >= 0 ? rest.slice(0, cut) : rest;
+  if (!/^[A-Za-z0-9._~\/-]*$/.test(pathPart) || pathPart.indexOf('..') >= 0) return null;
+  if (/[\s\\<>"']/.test(rest)) return null;
+  return url;
 }
 
 // Résultat : { state, feed?, fetchedAt?, error? }
@@ -900,23 +916,47 @@ async function deactivationFlow() {
   await showAlert('Appareil désactivé', 'Vos données Zeal ont été effacées de cet appareil.', [], 'OK');
 }
 
-async function presentMessages(now) {
+// Contenu frais, ou en cache hors ligne. Sinon, explique pourquoi et renvoie null.
+async function loadFeedInApp(now, pendingText) {
   const creds = getCredentials();
-  if (!creds) return;
+  if (!creds) return null;
   const result = await loadFeed(creds, now);
   if (result.state === 'revoked' || result.state === 'unknown_device') {
     await showAlert('Accès désactivé', 'Cet appareil n\'est plus autorisé. Les données locales ont été effacées.', [], 'OK');
-    return;
+    return null;
   }
   if (result.state === 'pending') {
-    await showAlert('Activation enregistrée', 'Vos messages apparaîtront après la prochaine publication, d\'ici quelques minutes.', [], 'OK');
-    return;
+    await showAlert('Activation enregistrée', pendingText, [], 'OK');
+    return null;
   }
   if (result.state === 'offline_empty') {
     await showAlert('Connexion impossible', 'Vérifiez votre connexion Internet, puis réessayez.', [], 'OK');
+    return null;
+  }
+  return result;
+}
+
+async function presentMessages(now) {
+  const result = await loadFeedInApp(now, 'Vos messages apparaîtront après la prochaine publication, d\'ici quelques minutes.');
+  if (!result) return;
+  await WebView.loadHTML(messagesHtml(result, now), null, null, true);
+}
+
+// « Avancement des projets » : ouvre la visionneuse dans Safari.
+async function presentProjects(now) {
+  const result = await loadFeedInApp(now, 'Les projets seront disponibles après la prochaine publication, d\'ici quelques minutes.');
+  if (!result) return;
+  const url = result.feed && result.feed.projectsUrl;
+  if (!url) {
+    await showAlert('Avancement des projets', 'Aucun projet n\'est publié pour le moment.', [], 'OK');
     return;
   }
-  await WebView.loadHTML(messagesHtml(result, now), null, null, true);
+  const safe = safeProjectsUrl(url);
+  if (!safe) {
+    await showAlert('Lien non reconnu', 'Le lien des projets n\'a pas pu être vérifié. Prévenez votre gestionnaire.', [], 'OK');
+    return;
+  }
+  Safari.open(safe);
 }
 
 async function presentPreview(size) {
@@ -960,13 +1000,14 @@ async function runInApp(params) {
   const choice = await showAlert(
     SCRIPT_TITLE,
     'Activé' + (employee && employee.display_name ? ' pour ' + employee.display_name : '') + ' · version ' + VERSION,
-    ['Voir les messages', 'Aperçu du widget moyen', 'Aperçu du grand widget', 'Désactiver cet appareil'],
+    ['Voir les messages', 'Avancement des projets', 'Aperçu du widget moyen', 'Aperçu du grand widget', 'Désactiver cet appareil'],
     'Fermer'
   );
   if (choice === 0) await presentMessages(now);
-  else if (choice === 1) await presentPreview('medium');
-  else if (choice === 2) await presentPreview('large');
-  else if (choice === 3) await deactivationFlow();
+  else if (choice === 1) await presentProjects(now);
+  else if (choice === 2) await presentPreview('medium');
+  else if (choice === 3) await presentPreview('large');
+  else if (choice === 4) await deactivationFlow();
 }
 
 async function buildWidget(family) {

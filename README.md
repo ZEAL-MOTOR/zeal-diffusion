@@ -15,6 +15,7 @@ GitHub Pages le publie à l'adresse https://zeal-motor.github.io/zeal-diffusion.
 | `feeds/<appareil>.json` | Un fichier par appareil activé, **chiffré** (XSalsa20-Poly1305) avec la clé de cet appareil : seul cet appareil peut le lire |
 | `status.json` | Date de la dernière publication |
 | `brand/` | Logos Zeal Motor |
+| `projets/` | Visionneuse de l'avancement des projets (si des projets sont publiés) ; `projets/data/` est **chiffré** avec la clé des projets, qui n'est que dans le lien de consultation |
 
 ## Pourquoi il est public
 
