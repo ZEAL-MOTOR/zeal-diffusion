@@ -21,7 +21,7 @@ return module.exports; })();
 // La clé de l'appareil est reçue par QR code et gardée dans le Trousseau iOS.
 // ---------------------------------------------------------------------------
 const FEED_URL = 'https://zeal-motor.github.io/zeal-diffusion';
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 
 const KEY_ID = 'zeal.device.id';
 const KEY_SECRET = 'zeal.device.key';
@@ -39,6 +39,12 @@ const REQUEST_TIMEOUT_S = 15;
 // ou si le site a été republié bien après l'activation (marge pour l'écart
 // d'horloge entre le PC et l'appareil).
 const REVOCATION_MARGIN_MS = 60 * 60 * 1000;
+// Diffusion en http (serveur de l'entreprise sans certificat) : sur le réseau,
+// une réponse peut être falsifiée. Un refus efface alors les messages gardés
+// sur l'appareil, mais pas sa clé : l'accès revient de lui-même dès qu'un
+// fichier valide est reçu (docs/SERVEUR-LOCAL.md, section 1 ter). Jusque-là,
+// le refus reste affiché, même hors ligne ou en cas d'erreur du serveur.
+const SOFT_REFUSAL = /^http:\/\//i.test(FEED_URL);
 
 const DARK = SCOPE === 'general';
 
@@ -74,7 +80,8 @@ const DAYS = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
 // Utilitaires
 // ---------------------------------------------------------------------------
 function isConfigured() {
-  return FEED_URL.indexOf('__ZEAL') === -1 && /^https:\/\/[^\s]+$/.test(FEED_URL);
+  // https (GitHub Pages) ou http (serveur de l'entreprise sur le réseau interne).
+  return FEED_URL.indexOf('__ZEAL') === -1 && /^https?:\/\/[^\s]+$/.test(FEED_URL);
 }
 
 function priorityOf(message) {
@@ -262,9 +269,30 @@ function wipeDevice(refusal) {
   if (refusal) Keychain.set(KEY_REFUSED, refusal);
 }
 
+// Refus reçu du site de diffusion. En https, tout est effacé ; en http, seuls
+// le cache et le nom de l'employé le sont (voir SOFT_REFUSAL).
+function refuseDevice(reason) {
+  if (!SOFT_REFUSAL) {
+    wipeDevice(reason);
+    return;
+  }
+  if (Keychain.contains(KEY_EMPLOYEE)) Keychain.remove(KEY_EMPLOYEE);
+  const fm = FileManager.local();
+  const path = cachePath();
+  if (fm.fileExists(path)) fm.remove(path);
+  Keychain.set(KEY_REFUSED, reason);
+}
+
 function lastRefusal() {
   const value = keychainGet(KEY_REFUSED);
   return value === 'revoked' || value === 'unknown_device' ? value : null;
+}
+
+// Refus à afficher après loadFeed : seul un fichier valide (« ok ») lève un
+// refus. En http, la clé est gardée : hors ligne, en cas d'erreur du serveur
+// ou en attente, le dernier refus reste en vigueur.
+function refusalAfter(result) {
+  return result.state === 'ok' ? null : lastRefusal();
 }
 
 // ---------------------------------------------------------------------------
@@ -418,8 +446,8 @@ function safeProjectsUrl(url) {
 //   offline       → réseau indisponible, dernier contenu valide affiché
 //   offline_empty → réseau indisponible et aucun contenu récent
 //   pending       → appareil activé, fichier pas encore publié
-//   revoked       → fichier retiré (appareil révoqué) : tout a été effacé
-//   unknown_device→ clé refusée : tout a été effacé
+//   revoked       → fichier retiré (appareil révoqué) : tout a été effacé (en http : voir refuseDevice)
+//   unknown_device→ clé refusée : tout a été effacé (en http : voir refuseDevice)
 async function loadFeed(creds, now) {
   let res;
   try {
@@ -431,11 +459,12 @@ async function loadFeed(creds, now) {
   if (res.status === 200 && res.body && res.body.box) {
     const data = openEnvelope(res.body, creds.key);
     if (!data) {
-      wipeDevice('unknown_device');
+      refuseDevice('unknown_device');
       return { state: 'unknown_device' };
     }
     writeCache(res.body, now);
     Keychain.set(KEY_SEEN, now.toISOString());
+    if (Keychain.contains(KEY_REFUSED)) Keychain.remove(KEY_REFUSED);
     if (data.employee) Keychain.set(KEY_EMPLOYEE, JSON.stringify(data.employee));
     return { state: 'ok', feed: viewFor(data, now), fetchedAt: now };
   }
@@ -454,7 +483,7 @@ async function loadFeed(creds, now) {
     const activatedAt = creds.activatedAt ? creds.activatedAt.getTime() : NaN;
     const seen = Boolean(keychainGet(KEY_SEEN));
     if (seen || (!isNaN(publishedAt) && !isNaN(activatedAt) && publishedAt > activatedAt + REVOCATION_MARGIN_MS)) {
-      wipeDevice('revoked');
+      refuseDevice('revoked');
       return { state: 'revoked' };
     }
     return { state: 'pending' };
@@ -643,7 +672,10 @@ function stateWidget(family, kind, logo, extra) {
     config: { symbol: 'gearshape', title: 'Script non configuré', text: 'Copiez ce script depuis la page d\'installation Zeal Motor.', tone: THEME.muted },
     not_activated: { symbol: 'qrcode', title: 'Appareil non activé', text: 'Scannez avec l\'appareil photo le QR code que votre gestionnaire vous montre.', tone: BRAND_RED },
     pending: { symbol: 'hourglass', title: 'Activation enregistrée', text: 'Vos messages apparaîtront après la prochaine publication, d\'ici quelques minutes.', tone: THEME.muted },
-    revoked: { symbol: 'lock.fill', title: 'Accès désactivé', text: 'Cet appareil n\'est plus autorisé. Les données locales ont été effacées. Contactez votre gestionnaire.', tone: DARK ? '#FF7A7E' : '#B42318' },
+    // En http, la clé est gardée (refuseDevice) : seuls les messages sont effacés.
+    revoked: { symbol: 'lock.fill', title: 'Accès désactivé', text: SOFT_REFUSAL
+      ? 'Cet appareil n\'est plus autorisé. Les messages gardés sur l\'appareil ont été effacés. Contactez votre gestionnaire.'
+      : 'Cet appareil n\'est plus autorisé. Les données locales ont été effacées. Contactez votre gestionnaire.', tone: DARK ? '#FF7A7E' : '#B42318' },
     unknown_device: { symbol: 'lock.fill', title: 'Appareil non reconnu', text: 'Demandez un nouveau QR code d\'activation à votre gestionnaire.', tone: DARK ? '#FF7A7E' : '#B42318' },
     offline_empty: { symbol: 'wifi.slash', title: 'Connexion impossible', text: SCOPE === 'personal'
       ? 'Vos messages s\'afficheront dès le retour du réseau.'
@@ -863,7 +895,9 @@ async function offerRename() {
 // Enregistre la clé puis vérifie qu'elle ouvre bien le fichier publié.
 async function activate(creds, now) {
   const existing = getCredentials();
-  if (existing && existing.id !== creds.id) {
+  // Après un refus en http, l'ancienne clé est encore là mais ne sert plus :
+  // ce n'est pas un remplacement, c'est une nouvelle activation.
+  if (existing && existing.id !== creds.id && !lastRefusal()) {
     const replace = await showAlert('Appareil déjà activé',
       'Cet appareil est déjà activé. Le remplacer par ce nouveau QR code ?', ['Remplacer'], 'Annuler');
     if (replace === -1) return false;
@@ -881,6 +915,8 @@ async function activate(creds, now) {
     return true;
   }
   if (result.state === 'unknown_device') {
+    // Clé qui vient d'être saisie : inutile de la garder, même en http.
+    wipeDevice('unknown_device');
     await showAlert('QR code non valide', 'Ce QR code ne correspond à aucun appareil. Demandez-en un nouveau à votre gestionnaire.', [], 'OK');
     return false;
   }
@@ -916,13 +952,30 @@ async function deactivationFlow() {
   await showAlert('Appareil désactivé', 'Vos données Zeal ont été effacées de cet appareil.', [], 'OK');
 }
 
+// Accès refusé, dans l'app. En https, tout a déjà été effacé. En http, la clé
+// est gardée (refuseDevice) : l'employé peut activer l'appareil avec un
+// nouveau QR code, sinon le script resterait sur ce refus.
+async function presentRefusal(now) {
+  if (!getCredentials()) {
+    await showAlert('Accès désactivé', 'Cet appareil n\'est plus autorisé. Les données locales ont été effacées.', [], 'OK');
+    return;
+  }
+  // En http, la clé est gardée : l'employé peut aussi l'effacer lui-même.
+  const again = await showAlert('Accès désactivé',
+    'Cet appareil n\'est plus autorisé. Les messages gardés sur l\'appareil ont été effacés. Contactez votre gestionnaire.',
+    ['Activer avec un nouveau QR code', 'Désactiver cet appareil'], 'Fermer');
+  if (again === 0 && await manualActivation(now)) await presentPreview(Device.isPad() ? 'large' : 'medium');
+  else if (again === 1) await deactivationFlow();
+}
+
 // Contenu frais, ou en cache hors ligne. Sinon, explique pourquoi et renvoie null.
 async function loadFeedInApp(now, pendingText) {
   const creds = getCredentials();
   if (!creds) return null;
   const result = await loadFeed(creds, now);
-  if (result.state === 'revoked' || result.state === 'unknown_device') {
-    await showAlert('Accès désactivé', 'Cet appareil n\'est plus autorisé. Les données locales ont été effacées.', [], 'OK');
+  // Refus reçu maintenant, ou refus en http pas encore levé par un fichier valide.
+  if (refusalAfter(result)) {
+    await presentRefusal(now);
     return null;
   }
   if (result.state === 'pending') {
@@ -991,6 +1044,17 @@ async function runInApp(params) {
     return;
   }
 
+  // Refus en http (clé gardée) : nouvelle vérification. Seul un fichier valide
+  // lève le refus ; sinon (refus confirmé, hors ligne, erreur du serveur),
+  // pas de menu : l'employé peut activer l'appareil avec un nouveau QR code.
+  if (lastRefusal()) {
+    const result = await loadFeed(getCredentials(), now);
+    if (refusalAfter(result)) {
+      await presentRefusal(now);
+      return;
+    }
+  }
+
   if (params.from === 'widget') {
     await presentMessages(now);
     return;
@@ -1018,9 +1082,11 @@ async function buildWidget(family) {
   if (!creds) return stateWidget(family, lastRefusal() || 'not_activated', logo);
 
   const result = await loadFeed(creds, now);
-  if (result.state === 'revoked' || result.state === 'unknown_device' || result.state === 'pending') {
-    return stateWidget(family, result.state, logo);
-  }
+  // Refus reçu maintenant, ou refus en http pas encore levé par un fichier
+  // valide (hors ligne ou erreur du serveur : le refus reste affiché).
+  const refusal = refusalAfter(result);
+  if (refusal) return stateWidget(family, refusal, logo);
+  if (result.state === 'pending') return stateWidget(family, 'pending', logo);
   if (result.state === 'offline_empty') return stateWidget(family, 'offline_empty', logo, result);
   const widget = renderFeed(family, result, logo, now);
   // Demande une actualisation au moment où un message doit apparaître ou
