@@ -279,7 +279,7 @@ export function allParents(tree) {
 }
 
 // Réduit tout ce qui est au niveau `level` ou plus profond : seuls les
-// niveaux 1 à `level` restent visibles.
+// niveaux 1 à `level` restent visibles. Niveau 1 : vue d'ouverture de la visionneuse.
 export function collapsedForLevel(tree, level) {
   const out = new Set();
   for (let i = 0; i < tree.n; i++) {
@@ -288,7 +288,7 @@ export function collapsedForLevel(tree, level) {
   return out;
 }
 
-// Vue par défaut, « groupes seulement » : toutes les tâches récapitulatives
+// Vue « groupes seulement » (menu Niveaux) : toutes les tâches récapitulatives
 // restent visibles, fermées sur leurs tâches de détail. Seuls les groupes qui
 // contiennent d'autres groupes restent ouverts.
 export function groupsOnlyCollapsed(tree) {

@@ -1,8 +1,9 @@
 // Visionneuse « Avancement des projets » (lecture seule).
 // Déchiffre dans le navigateur les fichiers publiés avec la clé du lien
 // (#k=…), affiche le Gantt et vérifie les mises à jour chaque minute.
-// Rien n'est envoyé nulle part : seules les préférences d'affichage
-// (lignes réduites ou masquées, zoom, colonnes) restent dans ce navigateur.
+// Rien n'est envoyé nulle part : seules les préférences d'affichage (lignes
+// masquées, zoom, colonnes, options) restent dans ce navigateur. Les lignes
+// ouvertes ne sont pas gardées : chaque ouverture repart du niveau 1.
 import * as G from './gantt-core.js';
 
 const REFRESH_MS = 60 * 1000;
@@ -158,8 +159,9 @@ function loadPrefs(project, tree) {
   const raw = loadStored(`p:${project.id}`) || {};
   const list = (v) => (Array.isArray(v) ? v : []);
   return {
-    // Préférences d'avant la version 2 : on repart de la vue « groupes seulement ».
-    collapsed: Array.isArray(raw.collapsed) && raw.v >= 2 ? new Set(raw.collapsed) : G.groupsOnlyCollapsed(tree),
+    // Chaque ouverture commence au niveau 1 du plan (tâches regroupées), quel que
+    // soit l'état laissé à la visite précédente : menu Niveaux pour en ouvrir plus.
+    collapsed: G.collapsedForLevel(tree, 1),
     hidden: new Set(list(raw.hidden)),
     zoom: G.ZOOMS[raw.zoom] ? raw.zoom : defaultZoom(tree),
     cols: new Set(list(raw.cols).filter((c) => typeof c === 'string')),
@@ -175,8 +177,8 @@ function savePrefs() {
   const known = (set) => [...set].filter((uid) => state.tree.index.has(uid));
   const p = state.prefs;
   saveStored(`p:${state.project.id}`, {
-    v: 2,
-    collapsed: known(p.collapsed), hidden: known(p.hidden), zoom: p.zoom, cols: [...p.cols],
+    v: 3, // lignes réduites non gardées : voir loadPrefs
+    hidden: known(p.hidden), zoom: p.zoom, cols: [...p.cols],
     deps: p.deps, baseline: p.baseline, critical: p.critical, gw: p.gw,
   });
 }
