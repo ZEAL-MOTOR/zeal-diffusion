@@ -343,7 +343,10 @@ async function start() {
   clearNotice();
   if (!window.nacl || !window.nacl.secretbox) { showError('page'); return; }
   if (!key) { state.link = null; showError('link'); return; }
-  state.link = { k: link.k, key };
+  // withProject : lien ouvert avec « &p= » (lien d'un projet précis). Sinon, l'adresse
+  // reste exactement le lien partagé : elle n'est jamais réécrite (dernier projet vu
+  // gardé dans ce navigateur).
+  state.link = { k: link.k, key, withProject: Boolean(link.p) };
   state.pid = link.p && ID_RE.test(link.p) ? link.p : (link.p ? '\u0000' : null);
   showLoading();
   await loadIndex({ openAfter: true });
@@ -428,6 +431,7 @@ function setOffline(offline) {
 }
 
 function setHashProject(id) {
+  if (!state.link.withProject) return;
   const hash = G.buildHash(state.link.k, id);
   if (window.location.hash !== hash) {
     window.history.replaceState(null, '', window.location.pathname + window.location.search + hash);
@@ -1756,6 +1760,8 @@ function bind() {
   window.addEventListener('hashchange', () => {
     const link = G.parseHash(window.location.hash);
     if (!state.link || link.k !== state.link.k) { start(); return; }
+    // Adresse modifiée à la main : un lien sans « &p= » redevient le lien partagé, jamais réécrit.
+    state.link.withProject = Boolean(link.p);
     if (link.p && link.p !== state.pid && ID_RE.test(link.p)) openProject(link.p);
   });
   window.addEventListener('online', () => checkUpdates());
