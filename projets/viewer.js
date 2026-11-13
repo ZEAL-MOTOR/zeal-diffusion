@@ -448,6 +448,7 @@ function metrics() {
 
 function applyProject(data, preserve) {
   const view = preserve ? captureView() : null;
+  const previous = state.tree;
   state.project = data;
   state.pid = data.id;
   state.tree = G.buildTree(data.tasks);
@@ -461,6 +462,12 @@ function applyProject(data, preserve) {
   } else {
     const i = view.selectedUid != null ? state.tree.index.get(view.selectedUid) : undefined;
     state.selected = i != null ? i : -1;
+    // Nouveau groupe (projet ajouté à une vue fusionnée, nouvelle tâche récapitulative) :
+    // fermé, comme à l'ouverture, au lieu d'arriver tout développé.
+    const t = state.tree;
+    for (let k = 0; k < t.n; k++) {
+      if (t.children[k].length && !(previous && previous.index.has(t.tasks[k].uid))) state.prefs.collapsed.add(t.tasks[k].uid);
+    }
   }
   state.ui.last = data.id;
   saveUi();
@@ -673,8 +680,16 @@ function renderHeader() {
   const f = G.parseDate(p.finish);
   const items = [];
   if (s != null || f != null) items.push(h('span', null, h('b', null, `${G.formatDate(s)} → ${G.formatDate(f)}`)));
+  // Vue fusionnée : plusieurs projets réunis, un groupe par projet.
+  const merged = Array.isArray(p.merged_from) ? p.merged_from.filter((m) => m && typeof m.name === 'string') : null;
+  if (merged) {
+    items.push(h('span', { class: 'merged', title: merged.map((m) => m.name).join(' · ') },
+      `Vue fusionnée : ${merged.length} projet${merged.length > 1 ? 's' : ''}`));
+  }
   const saved = G.parseDate(p.saved_at);
-  if (saved != null) items.push(h('span', { class: 'opt' }, `Enregistré dans Project le ${G.formatDateTime(saved)}`));
+  if (saved != null) {
+    items.push(h('span', { class: 'opt' }, `${merged ? 'Dernier enregistrement' : 'Enregistré'} dans Project le ${G.formatDateTime(saved)}`));
+  }
   const published = G.relativeTime(p.converted_at);
   if (published) items.push(h('span', null, `Publié ${published}`));
   const status = G.parseDate(p.status_date);
@@ -698,7 +713,8 @@ function renderNav() {
     const f = G.parseDate(p.finish);
     const late = f != null && f < state.today && Number(p.percent_complete) < 100;
     const published = G.relativeTime(p.converted_at);
-    const sub = [f != null ? `Fin : ${G.formatDate(f)}` : null, published ? `publié ${published}` : null].filter(Boolean).join(' · ');
+    const merged = Number(p.merged_count) > 0 ? `Vue fusionnée · ${p.merged_count} projet${p.merged_count > 1 ? 's' : ''}` : null;
+    const sub = [merged, f != null ? `Fin : ${G.formatDate(f)}` : null, published ? `publié ${published}` : null].filter(Boolean).join(' · ');
     return h('li', null, h('button', {
       type: 'button', class: 'nav-item', 'aria-current': current ? 'page' : null, dataset: { id: p.id },
       on: { click: () => { if (!state.project || state.project.id !== p.id) openProject(p.id); else closeNav(); } },
@@ -1500,9 +1516,11 @@ async function checkUpdates() {
     if (!index.projects.length) { showError('empty'); return; }
     const meta = index.projects.find((p) => p.id === state.project.id);
     if (!meta) { state.pid = state.project.id; showError('missing'); return; }
-    if (meta.converted_at !== state.project.converted_at) {
+    // Version du contenu (rev) si publiée, sinon date de lecture : un changement recharge la page ouverte.
+    const version = (p) => p.rev || p.converted_at;
+    if (version(meta) !== version(state.project)) {
       await openProject(meta.id, { preserve: true });
-      if (state.project && state.project.converted_at === meta.converted_at) toast('Planning mis à jour');
+      if (state.project && version(state.project) === version(meta)) toast('Planning mis à jour');
     }
     renderNav();
     renderHeader();
